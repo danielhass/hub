@@ -171,6 +171,10 @@ func (h *Handlers) setupRouter() {
 			r.Post("/verify-password-reset-code", h.Users.VerifyPasswordResetCode)
 			r.Group(func(r chi.Router) {
 				r.Use(h.Users.RequireLogin)
+				r.Route("/tfa", func(r chi.Router) {
+					r.Put("/enable", h.Users.EnableTFA)
+					r.Post("/", h.Users.SetupTFA)
+				})
 				r.Get("/logout", h.Users.Logout)
 				r.Get("/profile", h.Users.GetProfile)
 				r.Put("/profile", h.Users.UpdateProfile)

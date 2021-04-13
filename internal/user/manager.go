@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
 	"net/url"
 	"strings"
 	"time"
@@ -15,6 +16,8 @@ import (
 	"github.com/artifacthub/hub/internal/email"
 	"github.com/artifacthub/hub/internal/hub"
 	"github.com/jackc/pgx/v4"
+	"github.com/pquerna/otp"
+	"github.com/pquerna/otp/totp"
 	"github.com/satori/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -24,8 +27,11 @@ const (
 	checkUserAliasAvailDBQ       = `select check_user_alias_availability($1::text)`
 	checkUserCredsDBQ            = `select user_id, password from "user" where email = $1 and password is not null and email_verified = true`
 	deleteSessionDBQ             = `delete from session where session_id = $1`
+	enableTFADBQ                 = `update "user" set tfa_enabled = true where user_id = $1 and tfa_enabled = false`
 	getAPIKeyInfoDBQ             = `select user_id, secret from api_key where api_key_id = $1`
 	getSessionDBQ                = `select user_id, floor(extract(epoch from created_at)) from session where session_id = $1`
+	getTFAURLDBQ                 = `select tfa_url from "user" where user_id = $1 and tfa_url is not null`
+	getUserEmailDBQ              = `select email from "user" where user_id = $1`
 	getUserIDDBQ                 = `select user_id from "user" where email = $1`
 	getUserPasswordDBQ           = `select password from "user" where user_id = $1 and password is not null`
 	getUserProfileDBQ            = `select get_user_profile($1::uuid)`
@@ -33,10 +39,13 @@ const (
 	registerSessionDBQ           = `select register_session($1::jsonb)`
 	registerUserDBQ              = `select register_user($1::jsonb)`
 	resetUserPasswordDBQ         = `select reset_user_password($1::bytea, $2::text)`
+	updateTFAInfoDBQ             = `update "user" set tfa_url = $2, tfa_recovery_codes = $3 where user_id = $1`
 	updateUserPasswordDBQ        = `select update_user_password($1::uuid, $2::text, $3::text)`
 	updateUserProfileDBQ         = `select update_user_profile($1::uuid, $2::jsonb)`
 	verifyEmailDBQ               = `select verify_email($1::uuid)`
 	verifyPasswordResetCodeDBQ   = `select verify_password_reset_code($1::bytea)`
+
+	numRecoveryCodes = 10
 )
 
 var (
@@ -50,6 +59,10 @@ var (
 	// errInvalidPasswordResetCodeDB represents the error returned from the
 	// database when the password reset code is not valid.
 	errInvalidPasswordResetCodeDB = errors.New("ERROR: invalid password reset code (SQLSTATE P0001)")
+
+	// errInvalidTFAPasscode indicates that the TFA passcode provided is not
+	// valid.
+	errInvalidTFAPasscode = fmt.Errorf("%w: %s", hub.ErrInvalidInput, "invalid passcode")
 
 	// ErrNotFound indicates that the user does not exist.
 	ErrNotFound = errors.New("user not found")
@@ -223,6 +236,31 @@ func (m *Manager) DeleteSession(ctx context.Context, sessionID []byte) error {
 
 	// Delete session from database
 	_, err := m.db.Exec(ctx, deleteSessionDBQ, hashSessionID(sessionID))
+	return err
+}
+
+// EnableTFA enables two-factor authentication for the requesting user. The
+// user must have set it up first (see SetupTFA method).
+func (m *Manager) EnableTFA(ctx context.Context, input *hub.EnableTFAInput) error {
+	userID := ctx.Value(hub.UserIDKey).(string)
+
+	// Get TFA key url from database
+	var keyURL string
+	if err := m.db.QueryRow(ctx, getTFAURLDBQ, userID).Scan(&keyURL); err != nil {
+		return err
+	}
+	key, err := otp.NewKeyFromURL(keyURL)
+	if err != nil {
+		return err
+	}
+
+	// Validate passcode provided by user
+	if !totp.Validate(input.Passcode, key.Secret()) {
+		return errInvalidTFAPasscode
+	}
+
+	// Set TFA as enabled in the database
+	_, err = m.db.Exec(ctx, enableTFADBQ, userID)
 	return err
 }
 
@@ -449,6 +487,63 @@ func (m *Manager) ResetPassword(ctx context.Context, codeB64, newPassword, baseU
 	}
 
 	return nil
+}
+
+// SetupTFA sets up two-factor authentication for the requesting user. This
+// generates a new TOTP key and some recovery codes for the user and stores
+// them in the database. To complete the process, the user must enable TFA
+// (see EnableTFA method).
+func (m *Manager) SetupTFA(ctx context.Context) ([]byte, error) {
+	userID := ctx.Value(hub.UserIDKey).(string)
+
+	// Get requesting user email
+	var userEmail string
+	if err := m.db.QueryRow(ctx, getUserEmailDBQ, userID).Scan(&userEmail); err != nil {
+		return nil, err
+	}
+
+	// Generate TOTP key
+	opts := totp.GenerateOpts{
+		Issuer:      "Artifact Hub",
+		AccountName: userEmail,
+	}
+	key, err := totp.Generate(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Generate recovery codes
+	recoveryCodes := make([]string, 0, numRecoveryCodes)
+	recoveryCodesHashed := make([]string, 0, numRecoveryCodes)
+	for i := 0; i < numRecoveryCodes; i++ {
+		code := uuid.NewV4().String()
+		codeHashed := fmt.Sprintf("%x", sha512.Sum512([]byte(code)))
+		recoveryCodes = append(recoveryCodes, code)
+		recoveryCodesHashed = append(recoveryCodesHashed, codeHashed)
+	}
+
+	// Store TOTP key and recovery codes hashed in database
+	_, err = m.db.Exec(ctx, updateTFAInfoDBQ, userID, key.URL(), recoveryCodesHashed)
+	if err != nil {
+		return nil, err
+	}
+
+	// Prepare output with QR-Code image, recovery codes and secret
+	var buf bytes.Buffer
+	img, err := key.Image(300, 300)
+	if err != nil {
+		return nil, err
+	}
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	base64Img := base64.StdEncoding.EncodeToString(buf.Bytes())
+	output := &hub.SetupTFAOutput{
+		QRCode:        fmt.Sprintf("data:image/png;base64,%s", base64Img),
+		RecoveryCodes: recoveryCodes,
+		Secret:        key.Secret(),
+	}
+	return json.Marshal(output)
 }
 
 // UpdatePassword updates the user password in the database.

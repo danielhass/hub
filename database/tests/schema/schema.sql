@@ -218,7 +218,10 @@ select columns_are('user', array[
     'email_verified',
     'password',
     'profile_image_id',
-    'created_at'
+    'created_at',
+    'tfa_enabled',
+    'tfa_recovery_codes',
+    'tfa_url'
 ]);
 select columns_are('user_starred_package', array[
     'user_id',

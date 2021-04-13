@@ -161,6 +161,22 @@ func (h *Handlers) CheckAvailability(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// EnableTFA is an http handler used to enable two-factor authentication.
+func (h *Handlers) EnableTFA(w http.ResponseWriter, r *http.Request) {
+	var input *hub.EnableTFAInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		h.logger.Error().Err(err).Str("method", "EnableTFA").Msg(hub.ErrInvalidInput.Error())
+		helpers.RenderErrorJSON(w, hub.ErrInvalidInput)
+		return
+	}
+	if err := h.userManager.EnableTFA(r.Context(), input); err != nil {
+		h.logger.Error().Err(err).Str("method", "EnableTFA").Send()
+		helpers.RenderErrorJSON(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // GetProfile is an http handler used to get a logged in user profile.
 func (h *Handlers) GetProfile(w http.ResponseWriter, r *http.Request) {
 	dataJSON, err := h.userManager.GetProfileJSON(r.Context())
@@ -729,6 +745,17 @@ func (h *Handlers) ResetPassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// SetupTFA is an http handler used to setup two-factor authentication.
+func (h *Handlers) SetupTFA(w http.ResponseWriter, r *http.Request) {
+	dataJSON, err := h.userManager.SetupTFA(r.Context())
+	if err != nil {
+		h.logger.Error().Err(err).Str("method", "SetupTFA").Send()
+		helpers.RenderErrorJSON(w, err)
+		return
+	}
+	helpers.RenderJSON(w, dataJSON, 0, http.StatusCreated)
 }
 
 // UpdatePassword is an http handler used to update the password in the hub

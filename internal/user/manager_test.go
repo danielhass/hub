@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha512"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
@@ -13,8 +14,11 @@ import (
 	"github.com/artifacthub/hub/internal/hub"
 	"github.com/artifacthub/hub/internal/tests"
 	"github.com/jackc/pgx/v4"
+	"github.com/pquerna/otp/totp"
+	"github.com/satori/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -421,6 +425,71 @@ func TestDeleteSession(t *testing.T) {
 	})
 }
 
+func TestEnableTFA(t *testing.T) {
+	ctx := context.WithValue(context.Background(), hub.UserIDKey, "userID")
+	opts := totp.GenerateOpts{
+		Issuer:      "Artifact Hub",
+		AccountName: "test@email.com",
+	}
+	key, _ := totp.Generate(opts)
+
+	t.Run("user id not found in ctx", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(nil, nil)
+		assert.Panics(t, func() {
+			_, _ = m.SetupTFA(context.Background())
+		})
+	})
+
+	t.Run("error getting tfa key url from database", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return("", tests.ErrFakeDB)
+		m := NewManager(db, nil)
+
+		err := m.EnableTFA(ctx, &hub.EnableTFAInput{Passcode: "123456"})
+		assert.Equal(t, tests.ErrFakeDB, err)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("invalid passcode provided", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return(key.URL(), nil)
+		m := NewManager(db, nil)
+
+		err := m.EnableTFA(ctx, &hub.EnableTFAInput{Passcode: "123456"})
+		assert.Equal(t, errInvalidTFAPasscode, err)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("error setting tfa as enabled in the database", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return(key.URL(), nil)
+		db.On("Exec", ctx, enableTFADBQ, "userID").Return(tests.ErrFakeDB)
+		m := NewManager(db, nil)
+
+		passcode, _ := totp.GenerateCode(key.Secret(), time.Now())
+		err := m.EnableTFA(ctx, &hub.EnableTFAInput{Passcode: passcode})
+		assert.Equal(t, tests.ErrFakeDB, err)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("tfa enabled successfully", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return(key.URL(), nil)
+		db.On("Exec", ctx, enableTFADBQ, "userID").Return(nil)
+		m := NewManager(db, nil)
+
+		passcode, _ := totp.GenerateCode(key.Secret(), time.Now())
+		err := m.EnableTFA(ctx, &hub.EnableTFAInput{Passcode: passcode})
+		assert.Nil(t, err)
+		db.AssertExpectations(t)
+	})
+}
+
 func TestGetProfile(t *testing.T) {
 	ctx := context.WithValue(context.Background(), hub.UserIDKey, "userID")
 
@@ -452,6 +521,8 @@ func TestGetProfile(t *testing.T) {
 			LastName:       "last_name",
 			Email:          "email",
 			ProfileImageID: "profile_image_id",
+			PasswordSet:    true,
+			TFAEnabled:     true,
 		}
 
 		db := &tests.DBMock{}
@@ -461,7 +532,9 @@ func TestGetProfile(t *testing.T) {
 			"first_name": "first_name",
 			"last_name": "last_name",
 			"email": "email",
-			"profile_image_id": "profile_image_id"
+			"profile_image_id": "profile_image_id",
+			"password_set": true,
+			"tfa_enabled": true
 		}
 		`), nil)
 		m := NewManager(db, nil)
@@ -889,6 +962,65 @@ func TestResetPassword(t *testing.T) {
 				es.AssertExpectations(t)
 			})
 		}
+	})
+}
+
+func TestSetupTFA(t *testing.T) {
+	ctx := context.WithValue(context.Background(), hub.UserIDKey, "userID")
+
+	t.Run("user id not found in ctx", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(nil, nil)
+		assert.Panics(t, func() {
+			_, _ = m.SetupTFA(context.Background())
+		})
+	})
+
+	t.Run("error getting requesting user email", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getUserEmailDBQ, "userID").Return("", tests.ErrFakeDB)
+		m := NewManager(db, nil)
+
+		dataJSON, err := m.SetupTFA(ctx)
+		assert.Nil(t, dataJSON)
+		assert.Equal(t, tests.ErrFakeDB, err)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("error storing tfa info in database", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getUserEmailDBQ, "userID").Return("email", nil)
+		db.On("Exec", ctx, updateTFAInfoDBQ, "userID", mock.Anything, mock.Anything).Return(tests.ErrFake)
+		m := NewManager(db, nil)
+
+		dataJSON, err := m.SetupTFA(ctx)
+		assert.Nil(t, dataJSON)
+		assert.Equal(t, tests.ErrFake, err)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("setup tfa succeeded", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getUserEmailDBQ, "userID").Return("email", nil)
+		db.On("Exec", ctx, updateTFAInfoDBQ, "userID", mock.Anything, mock.Anything).Return(nil)
+		m := NewManager(db, nil)
+
+		dataJSON, err := m.SetupTFA(ctx)
+		assert.NotNil(t, dataJSON)
+		assert.Nil(t, err)
+		var output *hub.SetupTFAOutput
+		err = json.Unmarshal(dataJSON, &output)
+		require.NoError(t, err)
+		assert.NotEmpty(t, output.QRCode)
+		assert.NotEmpty(t, output.Secret)
+		for _, code := range output.RecoveryCodes {
+			_, err := uuid.FromString(code)
+			assert.NoError(t, err, code)
+		}
+		db.AssertExpectations(t)
 	})
 }
 

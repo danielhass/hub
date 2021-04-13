@@ -54,6 +54,12 @@ func (m *ManagerMock) DeleteSession(ctx context.Context, sessionID []byte) error
 	return args.Error(0)
 }
 
+// EnableTFA implements the UserManager interface.
+func (m *ManagerMock) EnableTFA(ctx context.Context, input *hub.EnableTFAInput) error {
+	args := m.Called(ctx, input)
+	return args.Error(0)
+}
+
 // GetProfile implements the UserManager interface.
 func (m *ManagerMock) GetProfile(ctx context.Context) (*hub.User, error) {
 	args := m.Called(ctx)
@@ -97,6 +103,13 @@ func (m *ManagerMock) RegisterUser(ctx context.Context, user *hub.User, baseURL 
 func (m *ManagerMock) ResetPassword(ctx context.Context, code, newPassword, baseURL string) error {
 	args := m.Called(ctx, code, newPassword, baseURL)
 	return args.Error(0)
+}
+
+// SetupTFA implements the UserManager interface.
+func (m *ManagerMock) SetupTFA(ctx context.Context) ([]byte, error) {
+	args := m.Called(ctx)
+	data, _ := args.Get(0).([]byte)
+	return data, args.Error(1)
 }
 
 // UpdatePassword implements the UserManager interface.

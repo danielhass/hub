@@ -153,6 +153,54 @@ func TestCheckAvailability(t *testing.T) {
 	})
 }
 
+func TestEnableTFA(t *testing.T) {
+	t.Run("invalid input", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		body := strings.NewReader(`{"passcode": "123456" ...`)
+		r, _ := http.NewRequest("PUT", "/", body)
+
+		hw := newHandlersWrapper()
+		hw.h.EnableTFA(w, r)
+		resp := w.Result()
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
+
+	t.Run("enable tfa failed", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		body := strings.NewReader(`{"passcode": "123456"}`)
+		r, _ := http.NewRequest("PUT", "/", body)
+
+		hw := newHandlersWrapper()
+		hw.um.On("EnableTFA", r.Context(), &hub.EnableTFAInput{Passcode: "123456"}).Return(tests.ErrFake)
+		hw.h.EnableTFA(w, r)
+		resp := w.Result()
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		hw.um.AssertExpectations(t)
+	})
+
+	t.Run("enble tfa succeeded", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		body := strings.NewReader(`{"passcode": "123456"}`)
+		r, _ := http.NewRequest("PUT", "/", body)
+
+		hw := newHandlersWrapper()
+		hw.um.On("EnableTFA", r.Context(), &hub.EnableTFAInput{Passcode: "123456"}).Return(nil)
+		hw.h.EnableTFA(w, r)
+		resp := w.Result()
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+		hw.um.AssertExpectations(t)
+	})
+}
+
 func TestGetProfile(t *testing.T) {
 	t.Run("error getting profile", func(t *testing.T) {
 		t.Parallel()
@@ -1031,6 +1079,42 @@ func TestResetPassword(t *testing.T) {
 		defer resp.Body.Close()
 
 		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+		hw.um.AssertExpectations(t)
+	})
+}
+
+func TestSetupTFA(t *testing.T) {
+	t.Run("tfa setup failed", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("POST", "/", nil)
+
+		hw := newHandlersWrapper()
+		hw.um.On("SetupTFA", r.Context()).Return(nil, tests.ErrFake)
+		hw.h.SetupTFA(w, r)
+		resp := w.Result()
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		hw.um.AssertExpectations(t)
+	})
+
+	t.Run("tfa setup succeeded", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		r, _ := http.NewRequest("POST", "/", nil)
+
+		hw := newHandlersWrapper()
+		hw.um.On("SetupTFA", r.Context()).Return([]byte("dataJSON"), nil)
+		hw.h.SetupTFA(w, r)
+		resp := w.Result()
+		defer resp.Body.Close()
+		h := resp.Header
+		data, _ := ioutil.ReadAll(resp.Body)
+
+		assert.Equal(t, http.StatusCreated, resp.StatusCode)
+		assert.Equal(t, "application/json", h.Get("Content-Type"))
+		assert.Equal(t, []byte("dataJSON"), data)
 		hw.um.AssertExpectations(t)
 	})
 }
