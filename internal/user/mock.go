@@ -55,14 +55,14 @@ func (m *ManagerMock) DeleteSession(ctx context.Context, sessionID []byte) error
 }
 
 // DisableTFA implements the UserManager interface.
-func (m *ManagerMock) DisableTFA(ctx context.Context, input *hub.DisableTFAInput) error {
-	args := m.Called(ctx, input)
+func (m *ManagerMock) DisableTFA(ctx context.Context, passcode string) error {
+	args := m.Called(ctx, passcode)
 	return args.Error(0)
 }
 
 // EnableTFA implements the UserManager interface.
-func (m *ManagerMock) EnableTFA(ctx context.Context, input *hub.EnableTFAInput) error {
-	args := m.Called(ctx, input)
+func (m *ManagerMock) EnableTFA(ctx context.Context, passcode string) error {
+	args := m.Called(ctx, passcode)
 	return args.Error(0)
 }
 

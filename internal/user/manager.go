@@ -241,7 +241,7 @@ func (m *Manager) DeleteSession(ctx context.Context, sessionID []byte) error {
 }
 
 // DisableTFA disables two-factor authentication for the requesting user.
-func (m *Manager) DisableTFA(ctx context.Context, input *hub.DisableTFAInput) error {
+func (m *Manager) DisableTFA(ctx context.Context, passcode string) error {
 	userID := ctx.Value(hub.UserIDKey).(string)
 
 	// Get TFA key url from database
@@ -255,7 +255,7 @@ func (m *Manager) DisableTFA(ctx context.Context, input *hub.DisableTFAInput) er
 	}
 
 	// Validate passcode provided by user
-	if !totp.Validate(input.Passcode, key.Secret()) {
+	if !totp.Validate(passcode, key.Secret()) {
 		return errInvalidTFAPasscode
 	}
 
@@ -266,7 +266,7 @@ func (m *Manager) DisableTFA(ctx context.Context, input *hub.DisableTFAInput) er
 
 // EnableTFA enables two-factor authentication for the requesting user. The
 // user must have set it up first (see SetupTFA method).
-func (m *Manager) EnableTFA(ctx context.Context, input *hub.EnableTFAInput) error {
+func (m *Manager) EnableTFA(ctx context.Context, passcode string) error {
 	userID := ctx.Value(hub.UserIDKey).(string)
 
 	// Get TFA key url from database
@@ -280,7 +280,7 @@ func (m *Manager) EnableTFA(ctx context.Context, input *hub.EnableTFAInput) erro
 	}
 
 	// Validate passcode provided by user
-	if !totp.Validate(input.Passcode, key.Secret()) {
+	if !totp.Validate(passcode, key.Secret()) {
 		return errInvalidTFAPasscode
 	}
 

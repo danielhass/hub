@@ -163,13 +163,13 @@ func (h *Handlers) CheckAvailability(w http.ResponseWriter, r *http.Request) {
 
 // DisableTFA is an http handler used to disable two-factor authentication.
 func (h *Handlers) DisableTFA(w http.ResponseWriter, r *http.Request) {
-	var input *hub.DisableTFAInput
+	var input map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		h.logger.Error().Err(err).Str("method", "DisableTFA").Msg(hub.ErrInvalidInput.Error())
 		helpers.RenderErrorJSON(w, hub.ErrInvalidInput)
 		return
 	}
-	if err := h.userManager.DisableTFA(r.Context(), input); err != nil {
+	if err := h.userManager.DisableTFA(r.Context(), input["passcode"]); err != nil {
 		h.logger.Error().Err(err).Str("method", "DisableTFA").Send()
 		helpers.RenderErrorJSON(w, err)
 		return
@@ -179,13 +179,13 @@ func (h *Handlers) DisableTFA(w http.ResponseWriter, r *http.Request) {
 
 // EnableTFA is an http handler used to enable two-factor authentication.
 func (h *Handlers) EnableTFA(w http.ResponseWriter, r *http.Request) {
-	var input *hub.EnableTFAInput
+	var input map[string]string
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		h.logger.Error().Err(err).Str("method", "EnableTFA").Msg(hub.ErrInvalidInput.Error())
 		helpers.RenderErrorJSON(w, hub.ErrInvalidInput)
 		return
 	}
-	if err := h.userManager.EnableTFA(r.Context(), input); err != nil {
+	if err := h.userManager.EnableTFA(r.Context(), input["passcode"]); err != nil {
 		h.logger.Error().Err(err).Str("method", "EnableTFA").Send()
 		helpers.RenderErrorJSON(w, err)
 		return

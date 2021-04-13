@@ -175,7 +175,7 @@ func TestDisableTFA(t *testing.T) {
 		r, _ := http.NewRequest("PUT", "/", body)
 
 		hw := newHandlersWrapper()
-		hw.um.On("DisableTFA", r.Context(), &hub.DisableTFAInput{Passcode: "123456"}).Return(tests.ErrFake)
+		hw.um.On("DisableTFA", r.Context(), "123456").Return(tests.ErrFake)
 		hw.h.DisableTFA(w, r)
 		resp := w.Result()
 		defer resp.Body.Close()
@@ -191,7 +191,7 @@ func TestDisableTFA(t *testing.T) {
 		r, _ := http.NewRequest("PUT", "/", body)
 
 		hw := newHandlersWrapper()
-		hw.um.On("DisableTFA", r.Context(), &hub.DisableTFAInput{Passcode: "123456"}).Return(nil)
+		hw.um.On("DisableTFA", r.Context(), "123456").Return(nil)
 		hw.h.DisableTFA(w, r)
 		resp := w.Result()
 		defer resp.Body.Close()
@@ -223,7 +223,7 @@ func TestEnableTFA(t *testing.T) {
 		r, _ := http.NewRequest("PUT", "/", body)
 
 		hw := newHandlersWrapper()
-		hw.um.On("EnableTFA", r.Context(), &hub.EnableTFAInput{Passcode: "123456"}).Return(tests.ErrFake)
+		hw.um.On("EnableTFA", r.Context(), "123456").Return(tests.ErrFake)
 		hw.h.EnableTFA(w, r)
 		resp := w.Result()
 		defer resp.Body.Close()
@@ -239,7 +239,7 @@ func TestEnableTFA(t *testing.T) {
 		r, _ := http.NewRequest("PUT", "/", body)
 
 		hw := newHandlersWrapper()
-		hw.um.On("EnableTFA", r.Context(), &hub.EnableTFAInput{Passcode: "123456"}).Return(nil)
+		hw.um.On("EnableTFA", r.Context(), "123456").Return(nil)
 		hw.h.EnableTFA(w, r)
 		resp := w.Result()
 		defer resp.Body.Close()

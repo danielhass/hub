@@ -447,7 +447,7 @@ func TestDisableTFA(t *testing.T) {
 		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return("", tests.ErrFakeDB)
 		m := NewManager(db, nil)
 
-		err := m.DisableTFA(ctx, &hub.DisableTFAInput{Passcode: "123456"})
+		err := m.DisableTFA(ctx, "123456")
 		assert.Equal(t, tests.ErrFakeDB, err)
 		db.AssertExpectations(t)
 	})
@@ -458,7 +458,7 @@ func TestDisableTFA(t *testing.T) {
 		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return(key.URL(), nil)
 		m := NewManager(db, nil)
 
-		err := m.DisableTFA(ctx, &hub.DisableTFAInput{Passcode: "123456"})
+		err := m.DisableTFA(ctx, "123456")
 		assert.Equal(t, errInvalidTFAPasscode, err)
 		db.AssertExpectations(t)
 	})
@@ -471,7 +471,7 @@ func TestDisableTFA(t *testing.T) {
 		m := NewManager(db, nil)
 
 		passcode, _ := totp.GenerateCode(key.Secret(), time.Now())
-		err := m.DisableTFA(ctx, &hub.DisableTFAInput{Passcode: passcode})
+		err := m.DisableTFA(ctx, passcode)
 		assert.Equal(t, tests.ErrFakeDB, err)
 		db.AssertExpectations(t)
 	})
@@ -484,7 +484,7 @@ func TestDisableTFA(t *testing.T) {
 		m := NewManager(db, nil)
 
 		passcode, _ := totp.GenerateCode(key.Secret(), time.Now())
-		err := m.DisableTFA(ctx, &hub.DisableTFAInput{Passcode: passcode})
+		err := m.DisableTFA(ctx, passcode)
 		assert.Nil(t, err)
 		db.AssertExpectations(t)
 	})
@@ -512,7 +512,7 @@ func TestEnableTFA(t *testing.T) {
 		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return("", tests.ErrFakeDB)
 		m := NewManager(db, nil)
 
-		err := m.EnableTFA(ctx, &hub.EnableTFAInput{Passcode: "123456"})
+		err := m.EnableTFA(ctx, "123456")
 		assert.Equal(t, tests.ErrFakeDB, err)
 		db.AssertExpectations(t)
 	})
@@ -523,7 +523,7 @@ func TestEnableTFA(t *testing.T) {
 		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return(key.URL(), nil)
 		m := NewManager(db, nil)
 
-		err := m.EnableTFA(ctx, &hub.EnableTFAInput{Passcode: "123456"})
+		err := m.EnableTFA(ctx, "123456")
 		assert.Equal(t, errInvalidTFAPasscode, err)
 		db.AssertExpectations(t)
 	})
@@ -536,7 +536,7 @@ func TestEnableTFA(t *testing.T) {
 		m := NewManager(db, nil)
 
 		passcode, _ := totp.GenerateCode(key.Secret(), time.Now())
-		err := m.EnableTFA(ctx, &hub.EnableTFAInput{Passcode: passcode})
+		err := m.EnableTFA(ctx, passcode)
 		assert.Equal(t, tests.ErrFakeDB, err)
 		db.AssertExpectations(t)
 	})
@@ -549,7 +549,7 @@ func TestEnableTFA(t *testing.T) {
 		m := NewManager(db, nil)
 
 		passcode, _ := totp.GenerateCode(key.Secret(), time.Now())
-		err := m.EnableTFA(ctx, &hub.EnableTFAInput{Passcode: passcode})
+		err := m.EnableTFA(ctx, passcode)
 		assert.Nil(t, err)
 		db.AssertExpectations(t)
 	})
