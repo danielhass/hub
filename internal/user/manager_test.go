@@ -425,6 +425,71 @@ func TestDeleteSession(t *testing.T) {
 	})
 }
 
+func TestDisableTFA(t *testing.T) {
+	ctx := context.WithValue(context.Background(), hub.UserIDKey, "userID")
+	opts := totp.GenerateOpts{
+		Issuer:      "Artifact Hub",
+		AccountName: "test@email.com",
+	}
+	key, _ := totp.Generate(opts)
+
+	t.Run("user id not found in ctx", func(t *testing.T) {
+		t.Parallel()
+		m := NewManager(nil, nil)
+		assert.Panics(t, func() {
+			_, _ = m.SetupTFA(context.Background())
+		})
+	})
+
+	t.Run("error getting tfa key url from database", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return("", tests.ErrFakeDB)
+		m := NewManager(db, nil)
+
+		err := m.DisableTFA(ctx, &hub.DisableTFAInput{Passcode: "123456"})
+		assert.Equal(t, tests.ErrFakeDB, err)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("invalid passcode provided", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return(key.URL(), nil)
+		m := NewManager(db, nil)
+
+		err := m.DisableTFA(ctx, &hub.DisableTFAInput{Passcode: "123456"})
+		assert.Equal(t, errInvalidTFAPasscode, err)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("error setting tfa as disabled in the database", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return(key.URL(), nil)
+		db.On("Exec", ctx, disableTFADBQ, "userID").Return(tests.ErrFakeDB)
+		m := NewManager(db, nil)
+
+		passcode, _ := totp.GenerateCode(key.Secret(), time.Now())
+		err := m.DisableTFA(ctx, &hub.DisableTFAInput{Passcode: passcode})
+		assert.Equal(t, tests.ErrFakeDB, err)
+		db.AssertExpectations(t)
+	})
+
+	t.Run("tfa disabled successfully", func(t *testing.T) {
+		t.Parallel()
+		db := &tests.DBMock{}
+		db.On("QueryRow", ctx, getTFAURLDBQ, "userID").Return(key.URL(), nil)
+		db.On("Exec", ctx, disableTFADBQ, "userID").Return(nil)
+		m := NewManager(db, nil)
+
+		passcode, _ := totp.GenerateCode(key.Secret(), time.Now())
+		err := m.DisableTFA(ctx, &hub.DisableTFAInput{Passcode: passcode})
+		assert.Nil(t, err)
+		db.AssertExpectations(t)
+	})
+}
+
 func TestEnableTFA(t *testing.T) {
 	ctx := context.WithValue(context.Background(), hub.UserIDKey, "userID")
 	opts := totp.GenerateOpts{

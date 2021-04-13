@@ -172,6 +172,7 @@ func (h *Handlers) setupRouter() {
 			r.Group(func(r chi.Router) {
 				r.Use(h.Users.RequireLogin)
 				r.Route("/tfa", func(r chi.Router) {
+					r.Put("/disable", h.Users.DisableTFA)
 					r.Put("/enable", h.Users.EnableTFA)
 					r.Post("/", h.Users.SetupTFA)
 				})

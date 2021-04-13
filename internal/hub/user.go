@@ -24,6 +24,11 @@ type CheckSessionOutput struct {
 	UserID string `json:"user_id"`
 }
 
+// DisableTFAInput represents the input received by the DisableTFA method.
+type DisableTFAInput struct {
+	Passcode string `json:"passcode"`
+}
+
 // EnableTFAInput represents the input received by the EnableTFA method.
 type EnableTFAInput struct {
 	Passcode string `json:"passcode"`
@@ -70,6 +75,7 @@ type UserManager interface {
 	CheckCredentials(ctx context.Context, email, password string) (*CheckCredentialsOutput, error)
 	CheckSession(ctx context.Context, sessionID []byte, duration time.Duration) (*CheckSessionOutput, error)
 	DeleteSession(ctx context.Context, sessionID []byte) error
+	DisableTFA(ctx context.Context, input *DisableTFAInput) error
 	EnableTFA(ctx context.Context, input *EnableTFAInput) error
 	GetProfile(ctx context.Context) (*User, error)
 	GetProfileJSON(ctx context.Context) ([]byte, error)

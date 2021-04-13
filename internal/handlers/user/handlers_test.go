@@ -153,6 +153,54 @@ func TestCheckAvailability(t *testing.T) {
 	})
 }
 
+func TestDisableTFA(t *testing.T) {
+	t.Run("invalid input", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		body := strings.NewReader(`{"passcode": "123456" ...`)
+		r, _ := http.NewRequest("PUT", "/", body)
+
+		hw := newHandlersWrapper()
+		hw.h.DisableTFA(w, r)
+		resp := w.Result()
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	})
+
+	t.Run("disable tfa failed", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		body := strings.NewReader(`{"passcode": "123456"}`)
+		r, _ := http.NewRequest("PUT", "/", body)
+
+		hw := newHandlersWrapper()
+		hw.um.On("DisableTFA", r.Context(), &hub.DisableTFAInput{Passcode: "123456"}).Return(tests.ErrFake)
+		hw.h.DisableTFA(w, r)
+		resp := w.Result()
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+		hw.um.AssertExpectations(t)
+	})
+
+	t.Run("disable tfa succeeded", func(t *testing.T) {
+		t.Parallel()
+		w := httptest.NewRecorder()
+		body := strings.NewReader(`{"passcode": "123456"}`)
+		r, _ := http.NewRequest("PUT", "/", body)
+
+		hw := newHandlersWrapper()
+		hw.um.On("DisableTFA", r.Context(), &hub.DisableTFAInput{Passcode: "123456"}).Return(nil)
+		hw.h.DisableTFA(w, r)
+		resp := w.Result()
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusNoContent, resp.StatusCode)
+		hw.um.AssertExpectations(t)
+	})
+}
+
 func TestEnableTFA(t *testing.T) {
 	t.Run("invalid input", func(t *testing.T) {
 		t.Parallel()

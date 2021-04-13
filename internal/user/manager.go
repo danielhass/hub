@@ -27,6 +27,7 @@ const (
 	checkUserAliasAvailDBQ       = `select check_user_alias_availability($1::text)`
 	checkUserCredsDBQ            = `select user_id, password from "user" where email = $1 and password is not null and email_verified = true`
 	deleteSessionDBQ             = `delete from session where session_id = $1`
+	disableTFADBQ                = `update "user" set tfa_enabled = false, tfa_url = null, tfa_recovery_codes = null where user_id = $1 and tfa_enabled = true`
 	enableTFADBQ                 = `update "user" set tfa_enabled = true where user_id = $1 and tfa_enabled = false`
 	getAPIKeyInfoDBQ             = `select user_id, secret from api_key where api_key_id = $1`
 	getSessionDBQ                = `select user_id, floor(extract(epoch from created_at)) from session where session_id = $1`
@@ -236,6 +237,30 @@ func (m *Manager) DeleteSession(ctx context.Context, sessionID []byte) error {
 
 	// Delete session from database
 	_, err := m.db.Exec(ctx, deleteSessionDBQ, hashSessionID(sessionID))
+	return err
+}
+
+// DisableTFA disables two-factor authentication for the requesting user.
+func (m *Manager) DisableTFA(ctx context.Context, input *hub.DisableTFAInput) error {
+	userID := ctx.Value(hub.UserIDKey).(string)
+
+	// Get TFA key url from database
+	var keyURL string
+	if err := m.db.QueryRow(ctx, getTFAURLDBQ, userID).Scan(&keyURL); err != nil {
+		return err
+	}
+	key, err := otp.NewKeyFromURL(keyURL)
+	if err != nil {
+		return err
+	}
+
+	// Validate passcode provided by user
+	if !totp.Validate(input.Passcode, key.Secret()) {
+		return errInvalidTFAPasscode
+	}
+
+	// Set TFA as disabled in the database
+	_, err = m.db.Exec(ctx, disableTFADBQ, userID)
 	return err
 }
 

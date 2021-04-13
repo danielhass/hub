@@ -161,6 +161,22 @@ func (h *Handlers) CheckAvailability(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// DisableTFA is an http handler used to disable two-factor authentication.
+func (h *Handlers) DisableTFA(w http.ResponseWriter, r *http.Request) {
+	var input *hub.DisableTFAInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		h.logger.Error().Err(err).Str("method", "DisableTFA").Msg(hub.ErrInvalidInput.Error())
+		helpers.RenderErrorJSON(w, hub.ErrInvalidInput)
+		return
+	}
+	if err := h.userManager.DisableTFA(r.Context(), input); err != nil {
+		h.logger.Error().Err(err).Str("method", "DisableTFA").Send()
+		helpers.RenderErrorJSON(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // EnableTFA is an http handler used to enable two-factor authentication.
 func (h *Handlers) EnableTFA(w http.ResponseWriter, r *http.Request) {
 	var input *hub.EnableTFAInput
